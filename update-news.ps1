@@ -1,4 +1,4 @@
-﻿# AI 资讯汇总刷新脚本：抓取 5 个免费公开源，机翻为中英对照，写入 news.json
+﻿# AI 资讯汇总刷新脚本：抓取 6 个免费公开源，机翻为中英对照，写入 news.json
 $ErrorActionPreference = 'Stop'
 $headers = @{ 'User-Agent' = 'Mozilla/5.0 github-hot-daily' }
 $now = Get-Date
@@ -56,6 +56,25 @@ function Translate-Text([string]$s, [string]$tl) {
     }
     return $t
 }
+
+# 0) 观猹热门 AI 产品榜（watcha.cn 公开 JSON，中文优先排最前）
+try {
+    $wc = Invoke-RestMethod -Headers $headers 'https://watcha.cn/api/v2/hot/products?limit=15' -TimeoutSec 30
+    $items = @($wc.data.items | Select-Object -First 15 | ForEach-Object {
+        $st = $_.stats
+        $metaBits = @()
+        if ($st.score) { $metaBits += "评分 $([math]::Round($st.score, 1))" }
+        if ($st.upvotes) { $metaBits += "👍 $($st.upvotes)" }
+        if ($st.review_count) { $metaBits += "$($st.review_count) 条评测" }
+        [ordered]@{
+            title   = $_.name
+            url     = "https://watcha.cn/products/$($_.slug)"
+            summary = Strip-Html $_.slogan 140
+            meta    = "观猹热榜 · $($metaBits -join ' · ')"
+        }
+    })
+    if ($items.Count) { $sections += [ordered]@{ id = 'watcha'; title = '🔥 观猹 AI 产品热榜（watcha.cn · 中文优先）'; items = $items } }
+} catch { Write-Warning "观猹抓取失败: $($_.Exception.Message)" }
 
 # 1) HuggingFace 每日论文
 try {
