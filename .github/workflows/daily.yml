@@ -22,10 +22,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./update.ps1
 
+      - name: Refresh news.json
+        shell: pwsh
+        run: ./update-news.ps1
+
       - name: Commit if changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data.json
+          git add data.json news.json
           git diff --cached --quiet || git commit -m "data: daily refresh $(date -u +%Y-%m-%d)"
           git push

@@ -5,21 +5,24 @@
 - 🔥 年度涨星榜：近一年创建的高星项目（按总星数排序，附月均涨星估算）
 - 🚀 近三月爆发榜：近 100 天创建的新锐项目
 - 🏛️ 长青经典榜：全站星数 TOP 40
+- 📰 AI 资讯：HuggingFace 每日论文 / Hacker News 热帖 / 量子位 / Google News 中文聚合 / DeepMind 博客
 - 📖 能力详解：人工策展的项目能力说明（基于各项目 README 提炼）与领域速查
 
 **在线访问**：https://nonamedcy.github.io/github-hot-daily/
 
 ## 工作原理
 
-- `index.html`：纯静态单页，浏览器端读取 `data.json` / `taglines.json` / `capabilities.md` 渲染，无后端。
+- `index.html`：纯静态单页，浏览器端读取 `data.json` / `news.json` / `taglines.json` / `capabilities.md` 渲染，无后端。
 - `update.ps1`：PowerShell 脚本，调用 GitHub Search API 刷新三榜数据写入 `data.json`（本地手动跑：`pwsh ./update.ps1`）。
-- `.github/workflows/daily.yml`：GitHub Actions 每日 UTC 02:00（北京时间 10:00）自动运行更新脚本并提交，也可在 Actions 页面手动触发。
+- `update-news.ps1`：PowerShell 脚本，抓取 5 个免费公开资讯源写入 `news.json`（单源失败不影响其他栏目）。
+- `.github/workflows/daily.yml`：GitHub Actions 每日 UTC 02:00（北京时间 10:00）自动运行两个更新脚本并提交，也可在 Actions 页面手动触发。
 
 ## 文件说明
 
 | 文件 | 作用 | 更新方式 |
 |---|---|---|
 | `data.json` | 三榜星数数据 | 每日自动 |
+| `news.json` | AI 资讯五栏目 | 每日自动 |
 | `taglines.json` | 项目中文一句话简介 | 人工策展 |
 | `capabilities.md` | 能力详解/领域速查/跟踪方法 | 人工策展 |
 

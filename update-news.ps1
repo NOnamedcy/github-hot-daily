@@ -1,0 +1,104 @@
+﻿# AI 资讯汇总刷新脚本：抓取 5 个免费公开源，写入 news.json
+$ErrorActionPreference = 'Stop'
+$headers = @{ 'User-Agent' = 'Mozilla/5.0 github-hot-daily' }
+$now = Get-Date
+$sections = @()
+
+function Strip-Html([string]$s, [int]$max = 140) {
+    if ([string]::IsNullOrWhiteSpace($s)) { return '' }
+    $t = $s -replace '<[^>]+>', ' '
+    $t = $t -replace '&nbsp;', ' ' -replace '&amp;', '&' -replace '&lt;', '<' -replace '&gt;', '>' -replace '&quot;', '"' -replace '&#39;', "'"
+    $t = ($t -replace '\s+', ' ').Trim()
+    if ($t.Length -gt $max) { $t = $t.Substring(0, $max) + '…' }
+    return $t
+}
+
+# 1) HuggingFace 每日论文
+try {
+    $hf = Invoke-RestMethod -Headers $headers 'https://huggingface.co/api/daily_papers' -TimeoutSec 30
+    $items = @($hf | Select-Object -First 15 | ForEach-Object {
+        $p = $_.paper
+        [ordered]@{
+            title   = $p.title
+            url     = "https://huggingface.co/papers/$($p.id)"
+            summary = Strip-Html $p.summary 160
+            meta    = "👍 $($p.upvotes) · $(([datetime]$_.publishedAt).ToString('MM-dd'))"
+        }
+    })
+    if ($items.Count) { $sections += [ordered]@{ id = 'papers'; title = '🤗 今日 AI 论文（HuggingFace Daily Papers）'; items = $items } }
+} catch { Write-Warning "HF papers 抓取失败: $($_.Exception.Message)" }
+
+# 2) Hacker News AI 热帖（近 7 天、30 分以上，按分数排序）
+try {
+    $weekAgo = [int]([DateTimeOffset]$now.AddDays(-7)).ToUnixTimeSeconds()
+    $hn = Invoke-RestMethod -Headers $headers "https://hn.algolia.com/api/v1/search?query=AI&tags=story&numericFilters=points%3E30,created_at_i%3E$weekAgo&hitsPerPage=30" -TimeoutSec 30
+    $items = @($hn.hits | Sort-Object points -Descending | Select-Object -First 15 | ForEach-Object {
+        $u = $_.url
+        if (-not $u) { $u = "https://news.ycombinator.com/item?id=$($_.objectID)" }
+        $d = [DateTimeOffset]::FromUnixTimeSeconds([int]$_.created_at_i).ToString('MM-dd')
+        [ordered]@{
+            title   = $_.title
+            url     = $u
+            summary = ''
+            meta    = "$($_.points) 分 · $($_.num_comments) 评论 · $d"
+        }
+    })
+    if ($items.Count) { $sections += [ordered]@{ id = 'hn'; title = '🔥 海外热点（Hacker News 近 7 天 AI 热帖）'; items = $items } }
+} catch { Write-Warning "HN 抓取失败: $($_.Exception.Message)" }
+
+# 3) 量子位 RSS
+try {
+    $x = [xml](Invoke-WebRequest -Headers $headers 'https://www.qbitai.com/feed' -UseBasicParsing -TimeoutSec 30).Content
+    $items = @($x.rss.channel.item | Select-Object -First 12 | ForEach-Object {
+        [ordered]@{
+            title   = [string]$_.title
+            url     = [string]$_.link
+            summary = Strip-Html ([string]$_.description) 140
+            meta    = "量子位 · $(([datetime]$_.pubDate).ToString('MM-dd'))"
+        }
+    })
+    if ($items.Count) { $sections += [ordered]@{ id = 'qbitai'; title = '📰 中文资讯（量子位）'; items = $items } }
+} catch { Write-Warning "量子位抓取失败: $($_.Exception.Message)" }
+
+# 4) Google News 中文「人工智能」近 1 天
+try {
+    $x = [xml](Invoke-WebRequest -Headers $headers 'https://news.google.com/rss/search?q=%E4%BA%BA%E5%B7%A5%E6%99%BA%E8%83%BD%20when:1d&hl=zh-CN&gl=CN&ceid=CN:zh-Hans' -UseBasicParsing -TimeoutSec 30).Content
+    $items = @($x.rss.channel.item | Select-Object -First 15 | ForEach-Object {
+        $src = [string]$_.source.'#text'
+        $t = [string]$_.title
+        if ($src -and $t.EndsWith(" - $src")) { $t = $t.Substring(0, $t.Length - $src.Length - 3) }
+        [ordered]@{
+            title   = $t
+            url     = [string]$_.link
+            summary = ''
+            meta    = "$src · $(([datetime]$_.pubDate).ToString('MM-dd HH:mm'))"
+        }
+    })
+    if ($items.Count) { $sections += [ordered]@{ id = 'gn'; title = '🌐 中文聚合（Google News · 近 24 小时）'; items = $items } }
+} catch { Write-Warning "Google News 抓取失败: $($_.Exception.Message)" }
+
+# 5) DeepMind 博客（近 30 天，兜底取最新 8 条）
+try {
+    $x = [xml](Invoke-WebRequest -Headers $headers 'https://deepmind.google/blog/rss.xml' -UseBasicParsing -TimeoutSec 30).Content
+    $all = @($x.rss.channel.item)
+    $recent = @($all | Where-Object { ([datetime]$_.pubDate) -gt $now.AddDays(-30) } | Select-Object -First 8)
+    if (-not $recent.Count) { $recent = @($all | Select-Object -First 8) }
+    $items = @($recent | ForEach-Object {
+        [ordered]@{
+            title   = [string]$_.title
+            url     = [string]$_.link
+            summary = Strip-Html ([string]$_.description) 140
+            meta    = "DeepMind · $(([datetime]$_.pubDate).ToString('yyyy-MM-dd'))"
+        }
+    })
+    if ($items.Count) { $sections += [ordered]@{ id = 'deepmind'; title = '🧠 DeepMind 官方博客（近 30 天）'; items = $items } }
+} catch { Write-Warning "DeepMind 抓取失败: $($_.Exception.Message)" }
+
+$out = [ordered]@{
+    updated  = $now.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    sections = $sections
+}
+$json = $out | ConvertTo-Json -Depth 6 -Compress
+[System.IO.File]::WriteAllText((Join-Path $PSScriptRoot 'news.json'), $json, (New-Object System.Text.UTF8Encoding $false))
+$total = ($sections | ForEach-Object { $_.items.Count } | Measure-Object -Sum).Sum
+Write-Output "news.json: $($sections.Count) 个栏目, 共 $total 条 @ $($out.updated)"
