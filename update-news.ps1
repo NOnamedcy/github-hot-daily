@@ -1,4 +1,4 @@
-﻿# AI 资讯汇总刷新脚本：抓取 5 个免费公开源，写入 news.json
+﻿# AI 资讯汇总刷新脚本：抓取 5 个免费公开源，机翻为中英对照，写入 news.json
 $ErrorActionPreference = 'Stop'
 $headers = @{ 'User-Agent' = 'Mozilla/5.0 github-hot-daily' }
 $now = Get-Date
@@ -10,6 +10,50 @@ function Strip-Html([string]$s, [int]$max = 140) {
     $t = $t -replace '&nbsp;', ' ' -replace '&amp;', '&' -replace '&lt;', '<' -replace '&gt;', '>' -replace '&quot;', '"' -replace '&#39;', "'"
     $t = ($t -replace '\s+', ' ').Trim()
     if ($t.Length -gt $max) { $t = $t.Substring(0, $max) + '…' }
+    return $t
+}
+
+# —— 免费机翻（Google gtx 端点）+ 磁盘缓存，避免重复翻译 ——
+$cachePath = Join-Path $PSScriptRoot 'translations.json'
+$script:cache = @{}
+if (Test-Path $cachePath) {
+    try {
+        $obj = (Get-Content $cachePath -Raw -Encoding UTF8) | ConvertFrom-Json
+        foreach ($p in $obj.PSObject.Properties) { $script:cache[$p.Name] = $p.Value }
+    } catch { Write-Warning "翻译缓存读取失败，将从零开始" }
+}
+function Is-CJK([string]$s) { return [regex]::IsMatch($s, '[一-鿿]') }
+# RSS 字段取文本：兼容纯文本节点与 CDATA 包裹（PS 5.1 直接 [string] 转换会变成类型名）
+function Rss-Text($node) {
+    if ($null -eq $node) { return '' }
+    if ($node -is [string]) { return $node }
+    if ($node.PSObject.Properties['#cdata-section'] -and $node.'#cdata-section') { return [string]$node.'#cdata-section' }
+    return [string]$node.InnerText
+}
+function Translate-Text([string]$s, [string]$tl) {
+    if ([string]::IsNullOrWhiteSpace($s)) { return '' }
+    $key = "$tl|$s"
+    if ($script:cache.ContainsKey($key)) { return $script:cache[$key] }
+    $t = ''
+    # 1) Google gtx（GitHub runner 上通常可用）
+    try {
+        $q = [uri]::EscapeDataString($s)
+        $r = Invoke-RestMethod -Headers $headers "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=$tl&dt=t&q=$q" -TimeoutSec 20
+        $t = (($r[0] | ForEach-Object { $_[0] }) -join '').Trim()
+    } catch { Write-Warning "gtx 翻译失败($tl): $($_.Exception.Message)" }
+    # 2) MyMemory 兜底
+    if (-not $t) {
+        try {
+            $pair = "en|$tl"; if ($tl -eq 'en') { $pair = 'zh-CN|en' }
+            $q = [uri]::EscapeDataString($s)
+            $r = Invoke-RestMethod -Headers $headers "https://api.mymemory.translated.net/get?q=$q&langpair=$pair" -TimeoutSec 20
+            if ("$($r.responseStatus)" -eq '200') { $t = [string]$r.responseData.translatedText }
+        } catch { Write-Warning "mymemory 翻译失败($tl): $($_.Exception.Message)" }
+    }
+    if ($t) {
+        $script:cache[$key] = $t
+        Start-Sleep -Milliseconds 120
+    }
     return $t
 }
 
@@ -53,7 +97,7 @@ try {
         [ordered]@{
             title   = [string]$_.title
             url     = [string]$_.link
-            summary = Strip-Html ([string]$_.description) 140
+            summary = Strip-Html (Rss-Text $_.description) 140
             meta    = "量子位 · $(([datetime]$_.pubDate).ToString('MM-dd'))"
         }
     })
@@ -87,12 +131,25 @@ try {
         [ordered]@{
             title   = [string]$_.title
             url     = [string]$_.link
-            summary = Strip-Html ([string]$_.description) 140
+            summary = Strip-Html (Rss-Text $_.description) 140
             meta    = "DeepMind · $(([datetime]$_.pubDate).ToString('yyyy-MM-dd'))"
         }
     })
     if ($items.Count) { $sections += [ordered]@{ id = 'deepmind'; title = '🧠 DeepMind 官方博客（近 30 天）'; items = $items } }
 } catch { Write-Warning "DeepMind 抓取失败: $($_.Exception.Message)" }
+
+# —— 中英对照：中文条目补英文，英文条目补中文 ——
+foreach ($sec in $sections) {
+    foreach ($it in $sec.items) {
+        if (Is-CJK $it.title) { $it.title_alt = Translate-Text $it.title 'en' }
+        else                  { $it.title_alt = Translate-Text $it.title 'zh-CN' }
+        if ($it.summary) {
+            if (Is-CJK $it.summary) { $it.summary_alt = Translate-Text $it.summary 'en' }
+            else                    { $it.summary_alt = Translate-Text $it.summary 'zh-CN' }
+        }
+    }
+}
+[System.IO.File]::WriteAllText($cachePath, ($script:cache | ConvertTo-Json -Depth 4 -Compress), (New-Object System.Text.UTF8Encoding $false))
 
 $out = [ordered]@{
     updated  = $now.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')

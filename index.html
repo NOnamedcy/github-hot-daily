@@ -126,6 +126,7 @@
     transition:transform var(--dur-2) var(--ease),border-color var(--dur-2) var(--ease),box-shadow var(--dur-2) var(--ease)}
   .news-item:hover{transform:translateY(-3px);border-color:#33405a;box-shadow:var(--shadow-hover)}
   .news-item .t{color:var(--text);font-size:14.5px;font-weight:600;line-height:1.45}
+  .news-item .t2{color:var(--faint);font-size:12.5px;font-weight:400;line-height:1.45;margin-top:3px}
   .news-item .meta{color:var(--faint);font-size:12px;margin-top:6px;font-family:var(--mono)}
   .news-item .sum{color:#96a3b5;font-size:12.8px;margin-top:7px;line-height:1.55}
 
@@ -199,7 +200,7 @@
   <div id="caps" class="md" style="display:none"></div>
 
   <footer>
-    数据源：GitHub Search API · HuggingFace · Hacker News · 量子位 · Google News · DeepMind（每日北京时间 10:00 自动刷新）<br>
+    数据源：GitHub Search API · HuggingFace · Hacker News · 量子位 · Google News · DeepMind（每日北京时间 08:00 自动刷新）<br>
     榜单中「月均涨星」= 总星数 ÷ 仓库月龄，为粗略估算 · 能力详解为人工策展内容 · 托管：GitHub Pages · 仓库：
     <a href="https://github.com/NOnamedcy/github-hot-daily" target="_blank" rel="noopener">NOnamedcy/github-hot-daily</a>
   </footer>
@@ -357,16 +358,21 @@ async function loadNews(){
     const bj = t.toLocaleString('zh-CN', { timeZone:'Asia/Shanghai', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
     const stagger = !reduceMotion;
     let idx = 0;
-    box.innerHTML = `<p class="note" style="margin-top:16px">资讯每日北京时间 10:00 自动刷新 · 本次更新 ${bj}</p>` +
+    box.innerHTML = `<p class="note" style="margin-top:16px">资讯每日北京时间 08:00 自动刷新 · 标题中英对照（机器翻译）· 本次更新 ${bj}</p>` +
       n.sections.map(sec => `
         <section class="news-sec">
           <h2>${esc(sec.title)}</h2>
           <div class="news-grid">
             ${sec.items.map(it => {
               const d = stagger ? ` style="animation-delay:${Math.min((idx++)*30,600)}ms"` : '';
+              const cjk = /[一-鿿]/.test(it.title || '');
+              const main = cjk ? it.title : (it.title_alt || it.title);
+              const alt  = cjk ? it.title_alt : (it.title_alt ? it.title : '');
+              const sum  = (!cjk && it.summary_alt) ? it.summary_alt : it.summary;
               return `<a class="news-item${stagger?' row-in':''}"${d} href="${esc(it.url)}" target="_blank" rel="noopener">
-                <div class="t">${esc(it.title)}</div>
-                ${it.summary ? `<div class="sum">${esc(it.summary)}</div>` : ''}
+                <div class="t">${esc(main)}</div>
+                ${alt ? `<div class="t2">${esc(alt)}</div>` : ''}
+                ${sum ? `<div class="sum">${esc(sum)}</div>` : ''}
                 <div class="meta">${esc(it.meta)}</div>
               </a>`;
             }).join('')}
