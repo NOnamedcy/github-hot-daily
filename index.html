@@ -144,6 +144,35 @@
   .md hr{border:none;border-top:1px solid var(--border);margin:22px 0}
   .md b{color:var(--text)}
 
+  /* ── Skills 卡片 ─────────────────────── */
+  .skill-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}
+  @media (max-width:760px){ .skill-grid{grid-template-columns:1fr} }
+  .skill-card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:block;
+    transition:transform var(--dur-2) var(--ease),border-color var(--dur-2) var(--ease),box-shadow var(--dur-2) var(--ease)}
+  .skill-card:hover{transform:translateY(-3px);border-color:#33405a;box-shadow:var(--shadow-hover)}
+  .skill-card .head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .skill-card .t{color:var(--text);font-size:14.5px;font-weight:600}
+  .skill-card .repo{color:var(--faint);font-size:12px;font-family:var(--mono)}
+  .skill-card .sum{color:#96a3b5;font-size:12.8px;margin-top:7px;line-height:1.55}
+  .src{display:inline-block;border-radius:10px;padding:0 8px;font-size:11.5px;font-family:var(--mono);white-space:nowrap}
+  .src.official{background:rgba(74,222,128,.12);color:var(--green);border:1px solid rgba(74,222,128,.35)}
+  .src.community{background:var(--gold-soft);color:var(--gold);border:1px solid rgba(245,197,66,.32)}
+  .src.repo{background:rgba(94,169,255,.1);color:var(--accent);border:1px solid rgba(94,169,255,.3)}
+
+  /* ── 项目查询 ────────────────────────── */
+  .lk-bar{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+  .lk-bar input{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--border);
+    border-radius:10px;color:var(--text);padding:10px 14px;font-size:14px;outline:none;font-family:var(--sans);
+    transition:border-color var(--dur-2) var(--ease),box-shadow var(--dur-2) var(--ease)}
+  .lk-bar input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(94,169,255,.15)}
+  .lk-bar button{background:var(--gold-soft);border:1px solid rgba(245,197,66,.4);color:var(--gold);
+    border-radius:10px;padding:10px 22px;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--sans);
+    transition:background var(--dur-2) var(--ease),transform var(--dur-2) var(--ease)}
+  .lk-bar button:hover{background:rgba(245,197,66,.24);transform:translateY(-1px)}
+  .lk-bar button:disabled{opacity:.55;cursor:wait;transform:none}
+  .lk-status{color:var(--dim);font-size:13px;margin:12px 0}
+  .lk-err{color:var(--hot);font-size:13px;margin:12px 0}
+
   .err{color:var(--hot);padding:20px;font-size:14px}
   footer{margin-top:52px;padding-top:18px;border-top:1px solid var(--border);
     color:var(--faint);font-size:12.5px;text-align:center;line-height:1.9}
@@ -170,6 +199,8 @@
     <div class="tab" data-tab="boom" role="tab" tabindex="0">🚀 近三月爆发榜</div>
     <div class="tab" data-tab="evergreen" role="tab" tabindex="0">🏛️ 长青经典榜</div>
     <div class="tab" data-tab="news" role="tab" tabindex="0">📰 AI 资讯</div>
+    <div class="tab" data-tab="skills" role="tab" tabindex="0">🧩 Skills 插件库</div>
+    <div class="tab" data-tab="lookup" role="tab" tabindex="0">🔍 项目查询</div>
     <div class="tab" data-tab="caps" role="tab" tabindex="0">📖 能力详解与速查</div>
     <div class="tab-ink" id="tabInk"></div>
   </nav>
@@ -197,10 +228,12 @@
   </div>
 
   <div id="news" style="display:none"></div>
+  <div id="skills" style="display:none"></div>
+  <div id="lookup" style="display:none"></div>
   <div id="caps" class="md" style="display:none"></div>
 
   <footer>
-    数据源：GitHub Search API · HuggingFace · Hacker News · 量子位 · Google News · DeepMind（每日北京时间 08:00 自动刷新）<br>
+    数据源：GitHub Search API · HuggingFace · Hacker News · 量子位 · Google News · DeepMind · anthropics/skills · awesome-claude-skills（每日北京时间 08:00 自动刷新）<br>
     榜单中「月均涨星」= 总星数 ÷ 仓库月龄，为粗略估算 · 能力详解为人工策展内容 · 托管：GitHub Pages · 仓库：
     <a href="https://github.com/NOnamedcy/github-hot-daily" target="_blank" rel="noopener">NOnamedcy/github-hot-daily</a>
   </footer>
@@ -382,6 +415,140 @@ async function loadNews(){
   }catch(e){ box.innerHTML = `<p class="err">资讯加载失败：${esc(e.message)}</p>`; }
 }
 
+/* —— Skills 插件库 —— */
+let skillsData = null;
+const SRC_LABEL = { official:'官方', community:'社区精选', repo:'仓库' };
+
+async function loadSkills(){
+  const box = $('#skills');
+  if (box.dataset.done) { renderSkillGrid(); return; }
+  box.innerHTML = `<p class="note" style="margin-top:16px">加载中…</p>`;
+  try{
+    skillsData = await fetch('skills.json?_=' + Date.now()).then(r=>r.json());
+    const t = new Date(skillsData.updated);
+    const bj = t.toLocaleString('zh-CN', { timeZone:'Asia/Shanghai', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+    box.innerHTML = `
+      <div class="toolbar">
+        <input id="sq" type="search" placeholder="搜索 skill 名称 / 功能描述 / 仓库…" aria-label="搜索 skill">
+        <span class="note" id="scount"></span>
+      </div>
+      <p class="note">Skills 插件库：Claude / Agent 可复用能力包（SKILL.md 开放标准）· 每日 08:00 随榜单自动刷新 · 更新于 ${bj} · 共 ${skillsData.count} 条</p>
+      <div class="skill-grid" id="sgrid"></div>`;
+    $('#sq').addEventListener('input', renderSkillGrid);
+    box.dataset.done = '1';
+    renderSkillGrid();
+  }catch(e){ box.innerHTML = `<p class="err">Skills 加载失败：${esc(e.message)}</p>`; }
+}
+
+function renderSkillGrid(){
+  const q = ($('#sq')?.value || '').toLowerCase();
+  let rows = skillsData.skills;
+  if (q) rows = rows.filter(x =>
+    (x.name||'').toLowerCase().includes(q) ||
+    (x.desc||'').toLowerCase().includes(q) ||
+    (x.repo||'').toLowerCase().includes(q));
+  $('#scount').textContent = `${rows.length} 条`;
+  const stagger = !reduceMotion;
+  let idx = 0;
+  $('#sgrid').innerHTML = rows.map(x => {
+    const d = stagger ? ` style="animation-delay:${Math.min((idx++)*20,400)}ms"` : '';
+    return `<a class="skill-card${stagger?' row-in':''}"${d} href="${esc(x.url)}" target="_blank" rel="noopener">
+      <div class="head">
+        <span class="t">${esc(x.name)}</span>
+        <span class="src ${esc(x.source)}">${SRC_LABEL[x.source]||esc(x.source)}</span>
+        ${x.stars ? `<span class="stars" style="font-size:12px">★ ${fmt(x.stars)}</span>` : ''}
+      </div>
+      <div class="repo">${esc(x.repo)}</div>
+      ${x.desc ? `<div class="sum">${esc(x.desc)}</div>` : ''}
+    </a>`;
+  }).join('') || '<p class="note">没有匹配的 skill</p>';
+}
+
+/* —— 实时项目查询（浏览器直连 GitHub Search API，无需后端）—— */
+const lkState = { sortKey:'stars', sortDir:-1, rows:[] };
+
+async function doLookup(){
+  const q = $('#lkq').value.trim();
+  const out = $('#lkOut');
+  if (!q) return;
+  $('#lkBtn').disabled = true;
+  out.innerHTML = `<p class="lk-status">正在查询 GitHub…</p>`;
+  try{
+    const url = 'https://api.github.com/search/repositories?q=' + encodeURIComponent(q) +
+      '&sort=' + (lkState.sortKey === 'monthly' ? 'stars' : lkState.sortKey) + '&order=' + (lkState.sortDir === -1 ? 'desc' : 'asc') + '&per_page=30';
+    const r = await fetch(url, { headers:{ 'Accept':'application/vnd.github+json' } });
+    if (!r.ok) throw new Error(r.status === 403 ? 'GitHub API 限流（匿名 10 次/分钟），请稍后再试' : 'HTTP ' + r.status);
+    const j = await r.json();
+    lkState.rows = (j.items||[]).map(it => {
+      const created = new Date(it.created_at);
+      const months = Math.max(0.5, (Date.now() - created.getTime()) / 86400000 / 30.44);
+      return {
+        name: it.full_name, url: it.html_url, stars: it.stargazers_count,
+        created: created.toISOString().slice(0,10), lang: it.language || '—',
+        desc: it.description || '', monthly: Math.round(it.stargazers_count / months),
+        forks: it.forks_count, issues: it.open_issues_count,
+        pushed: (it.pushed_at||'').slice(0,10)
+      };
+    });
+    out.innerHTML = `<p class="lk-status">找到 ${j.total_count.toLocaleString()} 个仓库（显示前 30）· 点击表头排序</p>` + lkTable();
+    wireLkSort();
+  }catch(e){
+    out.innerHTML = `<p class="lk-err">查询失败：${esc(e.message)}</p>`;
+  }finally{
+    $('#lkBtn').disabled = false;
+  }
+}
+
+function lkTable(){
+  const dir = lkState.sortDir, k = lkState.sortKey;
+  const rows = [...lkState.rows].sort((a,b)=> ((a[k]??'') > (b[k]??'') ? 1 : (a[k]??'') < (b[k]??'') ? -1 : 0) * dir);
+  const arr = c => k === c ? (dir === -1 ? ' ↓' : ' ↑') : '';
+  return `<div class="tablebox"><table><thead><tr>
+    <th data-lk="name">项目${arr('name')}</th>
+    <th data-lk="stars">星数${arr('stars')}</th>
+    <th data-lk="monthly">月均涨星${arr('monthly')}</th>
+    <th data-lk="created">创建${arr('created')}</th>
+    <th data-lk="pushed">最近更新${arr('pushed')}</th>
+    <th data-lk="lang">语言</th>
+    <th>简介</th>
+  </tr></thead><tbody>
+  ${rows.map(x => `<tr>
+    <td class="repo"><a href="${x.url}" target="_blank" rel="noopener">${esc(x.name)}</a></td>
+    <td class="stars">★ ${fmt(x.stars)}</td>
+    <td><span class="badge ${badgeClass(x.monthly)}">${fmtM(x.monthly)}</span></td>
+    <td class="created">${x.created}</td>
+    <td class="created">${x.pushed}</td>
+    <td class="lang">${esc(x.lang)}</td>
+    <td class="desc">${esc(x.desc)}</td>
+  </tr>`).join('') || '<tr><td colspan="7" class="note">无结果</td></tr>'}
+  </tbody></table></div>`;
+}
+
+function wireLkSort(){
+  document.querySelectorAll('th[data-lk]').forEach(th => th.addEventListener('click', ()=>{
+    const k = th.dataset.lk;
+    if (lkState.sortKey === k) lkState.sortDir *= -1; else { lkState.sortKey = k; lkState.sortDir = -1; }
+    const stat = $('#lkOut .lk-status'); 
+    $('#lkOut').innerHTML = (stat ? `<p class="lk-status">${stat.textContent}</p>` : '') + lkTable();
+    wireLkSort();
+  }));
+}
+
+function initLookup(){
+  const box = $('#lookup');
+  if (box.dataset.done) return;
+  box.innerHTML = `
+    <div class="lk-bar">
+      <input id="lkq" type="search" placeholder="查询任意 GitHub 项目：如 topic:claude-skills stars:>1000、ai agent、user:anthropics…" aria-label="查询项目">
+      <button id="lkBtn">查询</button>
+    </div>
+    <p class="note" style="margin-top:10px">支持 GitHub Search 语法：<code>topic:xxx</code> <code>stars:&gt;1000</code> <code>language:python</code> <code>user:xxx</code> <code>created:&gt;2026-01-01</code> · 实时直连 GitHub API（匿名限流 10 次/分钟）</p>
+    <div id="lkOut"></div>`;
+  $('#lkBtn').addEventListener('click', doLookup);
+  $('#lkq').addEventListener('keydown', e => { if (e.key === 'Enter') doLookup(); });
+  box.dataset.done = '1';
+}
+
 /* 标签页下划线滑动 */
 function moveInk(){
   const on = document.querySelector('.tab.on');
@@ -400,13 +567,16 @@ function switchTab(t){
   });
   state.tab = t.dataset.tab; state.sortKey = null;
   const isCaps = state.tab === 'caps', isNews = state.tab === 'news';
-  $('#board').style.display = (isCaps || isNews) ? 'none' : '';
+  const isSkills = state.tab === 'skills', isLookup = state.tab === 'lookup';
+  $('#board').style.display = (isCaps || isNews || isSkills || isLookup) ? 'none' : '';
   $('#caps').style.display = isCaps ? '' : 'none';
   $('#news').style.display = isNews ? '' : 'none';
+  $('#skills').style.display = isSkills ? '' : 'none';
+  $('#lookup').style.display = isLookup ? '' : 'none';
   moveInk();
-  const view = isCaps ? $('#caps') : isNews ? $('#news') : $('#board');
+  const view = isCaps ? $('#caps') : isNews ? $('#news') : isSkills ? $('#skills') : isLookup ? $('#lookup') : $('#board');
   if (!reduceMotion){ view.classList.remove('view-swap'); void view.offsetWidth; view.classList.add('view-swap'); }
-  if (isCaps) loadCaps(); else if (isNews) loadNews(); else renderRows(true);
+  if (isCaps) loadCaps(); else if (isNews) loadNews(); else if (isSkills) loadSkills(); else if (isLookup) initLookup(); else renderRows(true);
 }
 $('#tabs').addEventListener('click', e=>{
   const t = e.target.closest('.tab'); if (t) switchTab(t);
